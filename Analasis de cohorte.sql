@@ -135,11 +135,11 @@ GROUP BY c.CustomerID, YEAR(soh.OrderDate)
 
 ----------
 -- analisis de cohortes productos
--- No solo quiero ver como se van perdiendo los productos del año 2011 sino tambien como se van perdiendo los productos del año 2012 y 2013
+-- No solo quiero ver como se van perdiendo los productos del aï¿½o 2011 sino tambien como se van perdiendo los productos del aï¿½o 2012 y 2013
 
-WITH productos_por_año AS (
+WITH productos_por_aÃ±o AS (
     SELECT 
-        YEAR(soh.OrderDate) AS año,
+        YEAR(soh.OrderDate) AS aÃ±o,
         sod.ProductID,
         COUNT(*) AS cantidad_vendida
     FROM Sales.SalesOrderHeader soh
@@ -147,43 +147,76 @@ WITH productos_por_año AS (
     WHERE YEAR(soh.OrderDate) BETWEEN 2011 AND 2014
     GROUP BY YEAR(soh.OrderDate), sod.ProductID
 ),
-top1000_por_año AS (
+top1000_por_aÃ±o AS (
     SELECT 
-        año,
+        aÃ±o,
         ProductID
     FROM (
         SELECT 
-            año,
+            aÃ±o,
             ProductID,
-            ROW_NUMBER() OVER (PARTITION BY año ORDER BY cantidad_vendida DESC) AS ranking
-        FROM productos_por_año
+            ROW_NUMBER() OVER (PARTITION BY aÃ±o ORDER BY cantidad_vendida DESC) AS ranking
+        FROM productos_por_aÃ±o
     ) ranked
     WHERE ranking <= 1000
 ),
 combinaciones AS (
-    -- Generamos pares (cohorte, año_observado)
+    -- Generamos pares (cohorte, aï¿½o_observado)
     SELECT 
-        c1.año AS cohorte,
-        c2.año AS año_observado,
+        c1.aÃ±o AS cohorte,
+        c2.aÃ±o AS aÃ±o_observado,
         c1.ProductID
-    FROM top1000_por_año c1
-    JOIN top1000_por_año c2 
+    FROM top1000_por_aÃ±o c1
+    JOIN top1000_por_aÃ±o c2 
         ON c1.ProductID = c2.ProductID
-        AND c2.año >= c1.año  -- solo observaciones posteriores o del mismo año
-)
+        AND c2.aÃ±o >= c1.aÃ±o  -- solo observaciones posteriores o del mismo aï¿½o
+),
+productos_finales as (
 SELECT 
     cohorte,
-    año_observado - cohorte AS año_desde_cohorte,
+    aÃ±o_observado - cohorte AS aÃ±o_desde_cohorte,
     COUNT(DISTINCT ProductID) AS productos_retenidos
 FROM combinaciones
-GROUP BY cohorte, año_observado - cohorte
-ORDER BY cohorte, año_desde_cohorte;
+GROUP BY cohorte, aÃ±o_observado - cohorte
+)
+SELECT 
+    pf.cohorte,
+    pf.aÃ±o_desde_cohorte,
+    round((CAST(pf.productos_retenidos AS FLOAT) /
+     CAST(FIRST_VALUE(pf.productos_retenidos) OVER (PARTITION BY pf.cohorte ORDER BY pf.aÃ±o_desde_cohorte) AS FLOAT)),2) * 100 
+     AS porcentaje 
+FROM productos_finales pf
+order by pf.cohorte, pf.aÃ±o_desde_cohorte asc
+
+-- porcentaje para que luego cuando sea lineplot sea mÃ¡s facil visualizar la caida sino las cantidades no iban a hacer tan visible se lo quiero agregar a los otros
+
+
+
+SELECT 
+    pf.cohorte,
+    pf.aÃ±o_desde_cohorte,
+    pf.productos_retenidos,
+    CASE 
+        WHEN pf.aÃ±o_desde_cohorte != 0 THEN 
+            CAST(
+                pf.productos_retenidos / (
+                    SELECT FIRST_VALUE(cp2.productos_retenidos) 
+                    OVER (PARTITION BY pf2.cohorte ORDER BY pf2.aÃ±o_desde_cohorte)
+                    FROM productos_finales pf2 
+                    WHERE pf.cohorte = pf2.cohorte
+                ) 
+            AS FLOAT) * 100 
+        ELSE 100 
+    END AS porcentaje
+FROM productos_finales pf
+ORDER BY pf.cohorte ASC, pf.aÃ±o_desde_cohorte;
+
 
 ----------- con pivot para ver mejor
 
-WITH productos_por_año AS (
+WITH productos_por_aÃ±o AS (
     SELECT 
-        YEAR(soh.OrderDate) AS año,
+        YEAR(soh.OrderDate) AS aÃ±o,
         sod.ProductID,
         COUNT(*) AS cantidad_vendida
     FROM Sales.SalesOrderHeader soh
@@ -191,48 +224,48 @@ WITH productos_por_año AS (
     WHERE YEAR(soh.OrderDate) BETWEEN 2011 AND 2014
     GROUP BY YEAR(soh.OrderDate), sod.ProductID
 ),
-top100_por_año AS (
+top100_por_aÃ±o AS (
     SELECT 
-        año,
+        aÃ±o,
         ProductID
     FROM (
         SELECT 
-            año,
+            aÃ±o,
             ProductID,
-            ROW_NUMBER() OVER (PARTITION BY año ORDER BY cantidad_vendida DESC) AS ranking
-        FROM productos_por_año
+            ROW_NUMBER() OVER (PARTITION BY aÃ±o ORDER BY cantidad_vendida DESC) AS ranking
+        FROM productos_por_aÃ±o
     ) ranked
     WHERE ranking <= 100
 ),
 combinaciones AS (
     SELECT 
-        c1.año AS cohorte,
-        c2.año AS año_observado,
+        c1.aÃ±o AS cohorte,
+        c2.aÃ±o AS aÃ±o_observado,
         c1.ProductID
-    FROM top100_por_año c1
-    JOIN top100_por_año c2 
+    FROM top100_por_aÃ±o c1
+    JOIN top100_por_aÃ±o c2 
         ON c1.ProductID = c2.ProductID
-        AND c2.año >= c1.año
+        AND c2.aÃ±o >= c1.aÃ±o
 ),
-cohorte_retención AS (
+cohorte_retenciÃ³n AS (
     SELECT 
         cohorte,
-        año_observado - cohorte AS año_desde_cohorte,
+        aÃ±o_observado - cohorte AS aÃ±o_desde_cohorte,
         COUNT(DISTINCT ProductID) AS productos_retenidos
     FROM combinaciones
-    GROUP BY cohorte, año_observado - cohorte
+    GROUP BY cohorte, aÃ±o_observado - cohorte
 )
--- PIVOT: filas = cohorte, columnas = año_desde_cohorte
+-- PIVOT: filas = cohorte, columnas = aï¿½o_desde_cohorte
 SELECT 
     cohorte,
-    ISNULL([0], 0) AS año0,
-    ISNULL([1], 0) AS año1,
-    ISNULL([2], 0) AS año2,
-    ISNULL([3], 0) AS año3
-FROM cohorte_retención
+    ISNULL([0], 0) AS aÃ±o0,
+    ISNULL([1], 0) AS aÃ±o1,
+    ISNULL([2], 0) AS aÃ±o2,
+    ISNULL([3], 0) AS aÃ±o3
+FROM cohorte_retenciÃ³n
 PIVOT (
     SUM(productos_retenidos)
-    FOR año_desde_cohorte IN ([0], [1], [2], [3])
+    FOR aÃ±o_desde_cohorte IN ([0], [1], [2], [3])
 ) AS pvt
 ORDER BY cohorte;
 
@@ -241,7 +274,7 @@ ORDER BY cohorte;
 WITH primera_compra AS (
     SELECT 
         CustomerID,
-        MIN(YEAR(OrderDate)) AS año_primera_compra
+        MIN(YEAR(OrderDate)) AS aÃ±o_primera_compra
     FROM Sales.SalesOrderHeader
     WHERE YEAR(OrderDate) BETWEEN 2011 AND 2014
     GROUP BY CustomerID
@@ -249,49 +282,53 @@ WITH primera_compra AS (
 compras_por_cliente AS (
     SELECT 
         soh.CustomerID,
-        pc.año_primera_compra AS cohorte,
-        YEAR(soh.OrderDate) AS año_observado
+        pc.aÃ±o_primera_compra AS cohorte,
+        YEAR(soh.OrderDate) AS aÃ±o_observado
     FROM Sales.SalesOrderHeader soh
     JOIN primera_compra pc ON soh.CustomerID = pc.CustomerID
     WHERE YEAR(soh.OrderDate) BETWEEN 2011 AND 2014
-        AND pc.año_primera_compra BETWEEN 2011 AND 2014
-        AND YEAR(soh.OrderDate) >= pc.año_primera_compra
+        AND pc.aÃ±o_primera_compra BETWEEN 2011 AND 2014
+        AND YEAR(soh.OrderDate) >= pc.aÃ±o_primera_compra
 ),
 clientes_cohorte_retencion AS (
     SELECT 
         cohorte,
-        año_observado - cohorte AS año_desde_cohorte,
+        aÃ±o_observado - cohorte AS aÃ±o_desde_cohorte,
         COUNT(DISTINCT CustomerID) AS clientes_retenidos
     FROM compras_por_cliente
-    GROUP BY cohorte, año_observado - cohorte
+    GROUP BY cohorte, aÃ±o_observado - cohorte
 )
 -- Tabla pivotada
+select * from clientes_cohorte_retencion ccr ORDER BY ccr.cohorte ASC
+
+
 SELECT 
     cohorte,
-    ISNULL([0], 0) AS año0,
-    ISNULL([1], 0) AS año1,
-    ISNULL([2], 0) AS año2,
-    ISNULL([3], 0) AS año3
+    ISNULL([0], 0) AS aÃ±o0,
+    ISNULL([1], 0) AS aÃ±o1,
+    ISNULL([2], 0) AS aÃ±o2,
+    ISNULL([3], 0) AS aÃ±o3
 FROM clientes_cohorte_retencion
 PIVOT (
     SUM(clientes_retenidos)
-    FOR año_desde_cohorte IN ([0], [1], [2], [3])
+    FOR aÃ±o_desde_cohorte IN ([0], [1], [2], [3])
 ) AS pvt
-ORDER BY cohorte;
+ORDER BY cohorte
 
--- Si quiero los 100 clientes que mas´plata dejaron?
+
+-- Si quiero los 100 clientes que masï¿½plata dejaron?
 
 --1 Calcular la ganancia total por cliente (por todas sus compras).
 
---2 Ordenar y seleccionar el top 100 clientes más rentables.
+--2 Ordenar y seleccionar el top 100 clientes mï¿½s rentables.
 
---3 Hacer el mismo análisis de cohortes pero limitado a ese subconjunto.
+--3 Hacer el mismo anï¿½lisis de cohortes pero limitado a ese subconjunto.
 
--- 1. Calcular clientes más rentables
+-- 1. Calcular clientes mï¿½s rentables
 WITH clientes_rentables AS (
     SELECT 
         soh.CustomerID,
-        SUM(sod.UnitPrice * sod.OrderQty) AS ingresos -- o ganancia si tenés costos
+        SUM(sod.UnitPrice * sod.OrderQty) AS ingresos -- o ganancia si tenï¿½s costos
     FROM Sales.SalesOrderHeader soh
     JOIN Sales.SalesOrderDetail sod ON soh.SalesOrderID = sod.SalesOrderID
     WHERE YEAR(soh.OrderDate) BETWEEN 2011 AND 2014
@@ -307,51 +344,47 @@ top100_clientes AS (
     ) r
     WHERE ranking <= 100
 ),
-
 -- 2. Identificar la primera compra de esos clientes
 primera_compra AS (
     SELECT 
         soh.CustomerID,
-        MIN(YEAR(soh.OrderDate)) AS año_primera_compra
+        MIN(YEAR(soh.OrderDate)) AS aÃ±o_primera_compra
     FROM Sales.SalesOrderHeader soh
     JOIN top100_clientes tc ON soh.CustomerID = tc.CustomerID
     WHERE YEAR(soh.OrderDate) BETWEEN 2011 AND 2014
     GROUP BY soh.CustomerID
 ),
-
--- 3. Traer todas las compras de esos clientes en esos años
+-- 3. Traer todas las compras de esos clientes en esos aï¿½os
 compras_por_cliente AS (
     SELECT 
         soh.CustomerID,
-        pc.año_primera_compra AS cohorte,
-        YEAR(soh.OrderDate) AS año_observado
+        pc.aÃ±o_primera_compra AS cohorte,
+        YEAR(soh.OrderDate) AS aÃ±o_observado
     FROM Sales.SalesOrderHeader soh
     JOIN primera_compra pc ON soh.CustomerID = pc.CustomerID
     WHERE YEAR(soh.OrderDate) BETWEEN 2011 AND 2014
-        AND YEAR(soh.OrderDate) >= pc.año_primera_compra
+        AND YEAR(soh.OrderDate) >= pc.aÃ±o_primera_compra
 ),
-
--- 4. Calcular retención
+-- 4. Calcular retenciï¿½n
 clientes_cohorte_retencion AS (
     SELECT 
         cohorte,
-        año_observado - cohorte AS año_desde_cohorte,
+        aÃ±o_observado - cohorte AS aÃ±o_desde_cohorte,
         COUNT(DISTINCT CustomerID) AS clientes_retenidos
     FROM compras_por_cliente
-    GROUP BY cohorte, año_observado - cohorte
+    GROUP BY cohorte, aÃ±o_observado - cohorte
 )
-
 -- 5. PIVOT final
 SELECT 
     cohorte,
-    ISNULL([0], 0) AS año0,
-    ISNULL([1], 0) AS año1,
-    ISNULL([2], 0) AS año2,
-    ISNULL([3], 0) AS año3
+    ISNULL([0], 0) AS aÃ±o0,
+    ISNULL([1], 0) AS aÃ±o1,
+    ISNULL([2], 0) AS aÃ±o2,
+    ISNULL([3], 0) AS aÃ±o3
 FROM clientes_cohorte_retencion
 PIVOT (
     SUM(clientes_retenidos)
-    FOR año_desde_cohorte IN ([0], [1], [2], [3])
+    FOR aÃ±o_desde_cohorte IN ([0], [1], [2], [3])
 ) AS pvt
 ORDER BY cohorte;
 
