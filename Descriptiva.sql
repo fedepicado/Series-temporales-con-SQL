@@ -21,10 +21,8 @@ SELECT
 FROM
     Sales.SalesOrderHeader soh
     JOIN Sales.SalesTerritory st ON soh.TerritoryID = st.TerritoryID
-GROUP BY
-    st.Name
-ORDER BY
-    TotalSales DESC;
+GROUP BY st.Name
+ORDER BY TotalSales DESC;
 
 --3) top 5´productos mas vendidos por territorio (cantidad)
 
@@ -115,21 +113,51 @@ ORDER BY
     Year,
     TotalUnitsSold DESC;
 
--- 
+--4) top 5 productos mas vendidos por año
 
+WITH productos_mas_vendidos AS (
+    SELECT
+        YEAR(soh.OrderDate) AS Año,
+        p.Name AS Nombre_producto,
+        SUM(sod.OrderQty) AS Total_ventas,
+        ROW_NUMBER() OVER (PARTITION BY YEAR(soh.OrderDate) ORDER BY SUM(sod.OrderQty) DESC) AS rn
+    FROM Sales.SalesOrderDetail sod
+        JOIN Sales.SalesOrderHeader soh ON sod.SalesOrderID = soh.SalesOrderID
+        JOIN Production.Product p ON sod.ProductID = p.ProductID
+    GROUP BY YEAR(soh.OrderDate), p.Name
+)
 SELECT
-    st.Name AS TerritoryName,
-    YEAR(soh.OrderDate) AS Year,
-    p.Name AS ProductName,
-    SUM(sod.OrderQty) AS TotalUnitsSold
-FROM
-    Sales.SalesOrderDetail sod
+    Año,
+    Nombre_producto,
+    Total_ventas
+FROM productos_mas_vendidos
+WHERE rn <= 5
+ORDER BY Año, Total_ventas DESC;
+
+-----------------------------------
+
+WITH productos_mas_vendidos AS (
+    SELECT
+        YEAR(soh.OrderDate) AS Año,
+        st.Name AS Territorio,
+        p.Name AS Nombre_producto,
+        SUM(sod.OrderQty) AS Total_ventas,
+        ROW_NUMBER() OVER (
+            PARTITION BY YEAR(soh.OrderDate), st.Name
+            ORDER BY SUM(sod.OrderQty) DESC
+        ) AS rn
+    FROM Sales.SalesOrderDetail sod
     JOIN Sales.SalesOrderHeader soh ON sod.SalesOrderID = soh.SalesOrderID
-    JOIN Sales.SalesTerritory st ON soh.TerritoryID = st.TerritoryID
     JOIN Production.Product p ON sod.ProductID = p.ProductID
-GROUP BY
-    ROLLUP(st.Name, YEAR(soh.OrderDate), p.Name)
-ORDER BY
-    TerritoryName,
-    Year,
-    ProductName;
+    JOIN Sales.SalesTerritory st ON soh.TerritoryID = st.TerritoryID
+    GROUP BY YEAR(soh.OrderDate), st.Name, p.Name
+)
+SELECT
+    Año,
+    Territorio,
+    Nombre_producto,
+    Total_ventas
+FROM productos_mas_vendidos
+WHERE rn <= 5
+ORDER BY Año, Territorio, Total_ventas DESC;
+
